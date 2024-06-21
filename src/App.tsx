@@ -1,10 +1,13 @@
-import { lastDayOfMonth } from "date-fns";
+import { TodoistApi, getAuthToken } from "@doist/todoist-api-typescript";
+import {} from "date-fns";
+import queryString from "query-string";
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { authUrl } from "./api";
 import { Week } from "./components/week";
+import { useYearAndMonth } from "./hooks/useYearAndMonth";
 import { getCalendarDates } from "./libs/getCalendarDates";
-import { AppTask, isTimeLabel } from "./libs/types/appTask";
-
+import { AppTask } from "./libs/types/appTask";
+import { TaskViews } from "./libs/types/taskViews";
 if (import.meta.env.VITE_TODOIST_API_TOKEN === undefined)
 	throw new Error("VITE_TODOIST_API_TOKEN is not defined");
 
@@ -22,56 +25,73 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
 
 function App() {
 	const [tasks, setTasks] = useState<AppTask[]>([]);
-	const [month, setMonth] = useState(5);
-	const [year, setYear] = useState(2024);
+	const { year, month, increment, decrement } = useYearAndMonth();
+	const [api, setApi] = useState<TodoistApi | null>(null);
+	const param = queryString.parse(location.search);
 
-	const lastDateOfMonth = lastDayOfMonth(`${year}-${month}-01`).getDate();
+	// codeつきリダイレクトされた際にapiをセットする
+	useEffect(() => {
+		const f = async () => {
+			if (typeof param.code !== "string") return;
+
+			setApi(
+				new TodoistApi(
+					(
+						await getAuthToken({
+							clientId: import.meta.env.VITE_TODOIST_CLIENT as string,
+							clientSecret: import.meta.env.VITE_TODOIST_SECRET as string,
+							code: param.code,
+						})
+					).accessToken,
+				),
+			);
+		};
+		f();
+	}, [param]);
 
 	useEffect(() => {
 		const f = async () => {
+			if (api === null) return;
+			const projects = await api.getProjects();
+
 			const resTasks = await api.getTasks();
 			setTasks(
 				resTasks
-					.filter((t) => t.labels?.some((l) => isTimeLabel(l)))
+					// .filter((t) => t.labels?.some((l) => isTimeLabel(l)))
+					.filter(
+						(t) => t.projectId === projects.find((p) => p.name === "gc")?.id,
+					)
 					.filter((t) => !t.isCompleted)
+					.filter((t) => t.due)
 					.map((t) => new AppTask(t)),
 			);
-			console.log(resTasks);
 		};
 		f();
-	}, []);
+	}, [api]);
+
+	const taskViews = new TaskViews(...tasks.flatMap((t) => t.toTaskView()));
+	console.log(taskViews.map((taskViews) => taskViews.displayName));
 
 	return (
 		<>
-			{year}/{month}/{lastDateOfMonth}
-			<button
-				type="button"
-				onClick={() => {
-					if (month === 12) {
-						setYear(year + 1);
-						setMonth(1);
-					} else setMonth(month + 1);
-				}}
-			>
-				up
-			</button>
-			<button
-				type="button"
-				onClick={() => {
-					if (month === 1) {
-						setYear(year - 1);
-						setMonth(12);
-					} else setMonth(month - 1);
-				}}
-			>
-				down
-			</button>
+			<div style={{ display: "flex", justifyContent: "space-between" }}>
+				{year}/{month}
+				<div>
+					<button type="button" onClick={decrement}>
+						{"<"}
+					</button>
+					<button type="button" onClick={increment}>
+						{">"}
+					</button>
+				</div>
+				<a href={authUrl}>login</a>
+			</div>
 			<div style={{ display: "flex", flexDirection: "column" }}>
 				{chunkArray(getCalendarDates(year, month), 7).map((week) => (
 					<Week
 						week={week}
 						key={week.map((d) => d.getDate()).join()}
-						appTasks={tasks.flatMap((t) => t.toTaskView())}
+						weekAppTasks={taskViews.getPerWeek(week[0])}
 					/>
 				))}
 			</div>

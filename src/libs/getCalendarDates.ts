@@ -6,7 +6,7 @@ import {
 	startOfWeek,
 } from "date-fns";
 
-// カレンダーで表示する日付の配列を取得
+// カレンダーで表示する日付の配列を取得。この関数は必ず日曜日から始まり、土曜日で終わる。
 export function getCalendarDates(year: number, month: number) {
 	// 月の最初の日と最後の日を取得
 	const start = startOfMonth(new Date(year, month - 1));
